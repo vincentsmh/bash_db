@@ -1,7 +1,7 @@
 #!/bin/bash
 
 source bash_db
-#source bash_unittest
+source bash_unittest/bash_unittest
 
 ##### Test cases #####
 # Please add unit test cases in the following. The unit test function should be
