@@ -2,8 +2,10 @@
 .PHONY: test
 
 all:
-	echo -e "make [commands]"
-	echo -e "  - test: run unit test"
+	@echo
+	@echo "make [commands]"
+	@echo "  - test: run unit test"
+	@echo
 
 bash_unittest/bash_unittest:
 	@git clone https://github.com/vincentsmh/bash_unittest
