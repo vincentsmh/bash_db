@@ -74,6 +74,14 @@ function test_insert_n_read()
   rm -rf ${test_db_table}
 }
 
+function test_insert_nonexist_table()
+{
+  local tb_name="non_exist_table"
+  insert_record "${tb_name}" "v1" "v2" "v3"
+  assert_eq 1 $?
+  assert_eq "Table (${tb_name}) doesn't exist" "${bash_db_error}"
+}
+
 function test_set_db_dir()
 {
   local db_dir="${HOME}/.cn/db"

@@ -50,6 +50,11 @@ function insert_record()
   fi
 
   local tbfile=$(_table_file $1)
+  if [ ! -f ${tbfile} ]; then
+    bash_db_error="Table ($1) doesn't exist"
+    return 1
+  fi
+
   local rec_num=$(_get_record_num ${tbfile})
   rec_num=$((${rec_num} + 1))
   local insert_line="${rec_num}"
