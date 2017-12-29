@@ -2,12 +2,14 @@
 Bash Database
 =============
 
-This is a simulated database management tool for bash. All table are stored in
-files as string.
+This is a simulated database management tool for bash. All tables are stored in
+files. This is now suitable for small scale database management only.
 
 
 Quick Start
 ===========
+
+Clone this project and save `bash_db` along with your project. Then `source` it.
 
 ```bash
 #!/bin/bash
@@ -36,9 +38,10 @@ insert_record TABLE_NAME FIELD1_VALUE FIELD2_VALUE FIELD3_VALUE
 read_all TABLE_NAME RECORD_NAME
 ```
 
-Read all value from TABLE_NAME into the given variable name. The values will be
-stored in the variable name as a two dimention index format which is
-`[Index, FIELD_NAME]`. The following is an example.
+Read all values from `TABLE_NAME` into the given variable. The values will be
+stored in the variable as a two dimention index format which is
+`variable[Index, FIELD_NAME_idx]`. The following is an example to read all data
+into `tb_record`.
 
 ```bash
 read_all ${tb_name} "tb_record"
@@ -55,8 +58,11 @@ done
 set_db_dir DB_DIR
 ```
 
-After you set a directory, all table will be written/read to/from under the
+After setting a directory, all table will be written/read to/from under the
 directory. The default directory is `~/.bash_db/`.
+
+A database directory can treated as a database. In a database, it cannot
+possess two tables with the same name but in different database it can.
 
 ## Check if a table is existed
 
