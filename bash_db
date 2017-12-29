@@ -5,11 +5,21 @@
 DB_DIR="${HOME}/.bash_db"
 bash_db_error=""
 
+function _b64d()
+{
+  echo "$@" | base64 --decode
+}
+
+function _b64e()
+{
+  echo "$@" | base64
+}
+
 # create_table TABLE_NAME FIELD_NAME1 [FIELD_NAME2 FIELD_NAME3 ...]
 #   - Create a table in DB_DIR. Table and field name will be encoded as base64
 #     format. The first two lines are formated as follows:
-#       FIELD1_FIELD2_FIELD3_...
-#       NUMBER-OF-RECORDS_FIELD1-LENGTH_FIELD2-LENGTH_...
+#       FIELD1,FIELD2,FIELD3_...
+#       NUMBER-OF-RECORDS,FIELD1-LENGTH,FIELD2-LENGTH,...
 function create_table()
 {
   mkdir -p ${DB_DIR}
@@ -20,8 +30,8 @@ function create_table()
     return 1
   fi
 
-  touch ${tbfile}
-  if [ $? -ne 0 ]; then
+  if ! touch ${tbfile}; then
+    bash_db_error="Cannot create table file in ${DB_DIR}"
     return 1
   fi
 
@@ -30,11 +40,11 @@ function create_table()
   local field_len_line="0"
   for field in "$@"; do
     if [ "${fields_line}" != "" ]; then
-      fields_line="${fields_line}_"
+      fields_line="${fields_line},"
     fi
 
-    fields_line="${fields_line}$(echo ${field} | base64)"
-    field_len_line="${field_len_line}_${#field}"
+    fields_line="${fields_line}$(_b64e ${field})"
+    field_len_line="${field_len_line},${#field}"
   done
 
   echo -e "${fields_line}\n${field_len_line}" > ${tbfile}
@@ -45,7 +55,7 @@ function create_table()
 function insert_record()
 {
   if [ -z "$1" ]; then
-    bash_db_error="Need table name"
+    bash_db_error="No arguments"
     return 1
   fi
 
@@ -62,7 +72,7 @@ function insert_record()
   shift 1
   for field_value in $@; do
     num_len_line="${num_len_line} ${#field_value}"
-    insert_line="${insert_line}_${field_value}"
+    insert_line="${insert_line},$(_b64e ${field_value})"
   done
 
   echo -e "${insert_line}" >> ${tbfile}
@@ -107,19 +117,19 @@ function read_all()
   while read record; do
     if [ ${loop_idx} -eq 0 ]; then
       unset fields
-      IFS='_' read -a fields <<< "${record}"
+      IFS=',' read -a fields <<< "${record}"
     elif [ ${loop_idx} -eq 1 ]; then
       unset fields_len
-      IFS='_' read -a fields_len <<< "${record}"
+      IFS=',' read -a fields_len <<< "${record}"
     else
       unset array
-      IFS='_' read -a array <<< "${record}"
+      IFS=',' read -a array <<< "${record}"
       local th=$(echo ${array[0]})
       local i=1
 
       for field in ${fields[@]}; do
-        local decoded_field=$(echo ${field} | base64 --decode)
-        eval $2[${th},${decoded_field}]=${array[$i]}
+        local decoded_field=$(_b64d ${field})
+        eval $2[${th},${decoded_field}]=$(_b64d ${array[$i]})
         i=$(($i + 1))
       done
     fi
@@ -149,7 +159,7 @@ function table_exist()
 # _get_record_num TABLE_FILE
 function _get_record_num()
 {
-  cat $1 | sed -n 2p | awk -F "_" {'print $1'}
+  cat $1 | sed -n 2p | awk -F "," {'print $1'}
 }
 
 # _get_metadata TABLE_NAME
@@ -176,15 +186,15 @@ function _set_num_record()
   local tbfile="$1"
   local line="$(cat $1 | sed -n 2p)"
   local idx=1
-  IFS='_' read -a num_n_flen <<< "${line}"
+  IFS=',' read -a num_n_flen <<< "${line}"
   line="$2"
   shift 2
 
   for field_len in $@; do
     if [ ${field_len} -gt ${num_n_flen[$idx]} ]; then
-      line="${line}_${field_len}"
+      line="${line},${field_len}"
     else
-      line="${line}_${num_n_flen[$idx]}"
+      line="${line},${num_n_flen[$idx]}"
     fi
     idx=$((${idx} + 1))
   done
@@ -198,5 +208,5 @@ function _set_num_record()
 #   - Return table file path
 function _table_file()
 {
-  echo "${DB_DIR}/$(echo $1 | base64)"
+  echo "${DB_DIR}/$(_b64e $1)"
 }

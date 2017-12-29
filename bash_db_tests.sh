@@ -8,16 +8,16 @@ source bash_unittest/bash_unittest
 # started with 'test_'
 function test_create_table()
 {
-  local db_dir="${HOME}/.bash_db/$(echo 'test_table' | base64)"
+  rm -rf ${db_file}
+  local db_file="${HOME}/.bash_db/$(_b64e 'test_table')"
   create_table "test_table" "field1" "field2" "field3"
-  assert_file_exist "${db_dir}"
+  assert_file_exist "${db_file}"
 
-  local line="$(echo 'field1'|base64)_$(echo 'field2'|base64)"
-  line="${line}_$(echo 'field3'|base64)"
-  assert_eq "${line}" "$(head -n 1 ${db_dir})"
-  assert_eq "0_6_6_6" "$(cat ${db_dir} | sed -n 2p)"
-
-  rm -rf ${db_dir}
+  local line="$(echo 'field1'|base64),$(echo 'field2'|base64)"
+  line="${line},$(echo 'field3'|base64)"
+  assert_eq "${line}" "$(head -n 1 ${db_file})"
+  assert_eq "0,6,6,6" "$(cat ${db_file} | sed -n 2p)"
+  rm -rf ${db_file}
 }
 
 function test_exist_table()
@@ -40,6 +40,7 @@ function test_exist_table()
 
 function test_insert_n_read()
 {
+  rm -rf ${test_db_table}
   local tb_name='test_table'
   local test_db_table="${DB_DIR}/$(echo ${tb_name} | base64)"
   create_table "${tb_name}" "field1" "field2" "field3"
@@ -50,13 +51,13 @@ function test_insert_n_read()
     insert_record "${tb_name}" "${v}" "${v}" "${v}"
 
     if [ $i -le 6 ]; then
-      assert_eq "${i}_6_6_6" "$(cat ${test_db_table} | sed -n 2p)"
+      assert_eq "${i},6,6,6" "$(cat ${test_db_table} | sed -n 2p)"
     else
-      assert_eq "${i}_${i}_${i}_${i}" "$(cat ${test_db_table} | sed -n 2p)"
+      assert_eq "${i},${i},${i},${i}" "$(cat ${test_db_table} | sed -n 2p)"
     fi
 
     local nth=$(($i + 2))
-    assert_eq "${i}_${v}_${v}_${v}" \
+    assert_eq "${i},$(_b64e ${v}),$(_b64e ${v}),$(_b64e ${v})" \
       "$(cat ${test_db_table} | sed -n ${nth}p)"
   done
 
