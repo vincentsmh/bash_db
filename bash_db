@@ -72,7 +72,7 @@ function insert_record()
   local insert_line="${rec_num}"
   local num_len_line=""
   shift 1
-  for field_value in $@; do
+  for field_value in "$@"; do
     num_len_line="${num_len_line} ${#field_value}"
     insert_line="${insert_line}\,${field_value}"
   done
