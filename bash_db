@@ -199,7 +199,7 @@ function _set_num_record()
     idx=$((${idx} + 1))
   done
 
-  local sed_cmd="sed -i '2s/.*/${line}/' ${tbfile}"
+  local sed_cmd="sed -i'' -e '2s/.*/${line}/' ${tbfile}"
   eval ${sed_cmd}
   return $?
 }
