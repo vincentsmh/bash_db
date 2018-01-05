@@ -93,4 +93,8 @@ function test_set_db_dir()
 }
 
 ### Main ###
-unittest $0
+if [ -z "$1" ]; then
+  unittest $0
+else
+  unittest "$0" "$1"
+fi
