@@ -88,7 +88,30 @@ function insert_record()
 #   - Print table to console output
 function print_table()
 {
-  return 0
+  _print_table_head "$1"
+  read_all "$1" "print_data"
+
+  local color=32
+  for i in $(seq 1 ${fields_len[0]}); do
+    local len_idx=1
+    echo -n "|"
+    for field_name in ${fields[@]}; do
+      echo -en "\033[1;${color}m${print_data[$i,${field_name}]}\033[0m"
+      _print_chars " " \
+        $(( ${fields_len[$len_idx]} - ${#print_data[$i,${field_name}]} ))
+      echo -n "|"
+      len_idx=$(( $len_idx + 1 ))
+    done
+
+    if [ $color -eq 37 ]; then
+      color=32
+    else
+      color=$(( $color + 1 ))
+    fi
+
+    echo -e
+    _print_table_line
+  done
 }
 
 # read_all TABLE_NAME VARIABLE
@@ -118,6 +141,11 @@ function read_all()
     if [ ${loop_idx} -eq 0 ]; then
       unset fields
       IFS=',' read -a fields <<< "${record}"
+      local idx=0
+      for field in $fields; do
+        fields[$idx]=$( _b64d $field )
+        idx=$(( $idx + 1 ))
+      done
     elif [ ${loop_idx} -eq 1 ]; then
       unset fields_len
       IFS=',' read -a fields_len <<< "${record}"
@@ -128,8 +156,7 @@ function read_all()
       local i=1
 
       for field in ${fields[@]}; do
-        local decoded_field=$(_b64d ${field})
-        eval $2[${th},${decoded_field}]=$(_b64d ${array[$i]})
+        eval $2[${th},${field}]=$(_b64d ${array[$i]})
         i=$(($i + 1))
       done
     fi
@@ -162,19 +189,72 @@ function _get_record_num()
   cat $1 | sed -n 2p | awk -F "," {'print $1'}
 }
 
+# _print_chars CHAR NUMBER
+function _print_chars()
+{
+  printf "%${2}s"|tr ' ' "${1}"
+}
+
+function _print_table_head()
+{
+  _get_metadata "$1"
+  _print_table_line
+
+  # Print table fields
+  local len_idx=1
+  echo -n "|"
+  for field in ${fields[@]}; do
+    local field_max_len=${fields_len[$len_idx]}
+    local field_len=${#field}
+    local start_space_len=$(( ($field_max_len - $field_len) / 2 ))
+    local tail_space_len=$(( $field_max_len - $field_len - $start_space_len ))
+    _print_chars " " $start_space_len
+    echo -n $field
+    _print_chars " " $tail_space_len
+    echo -n "|"
+    len_idx=$(( $len_idx + 1 ))
+  done
+
+  echo -e
+  _print_table_line
+
+}
+
+# Before calling this function, _get_metadata should be called in advance to
+# get corresponding variables.
+function _print_table_line()
+{
+  local end_idx=$(( ${#fields_len[@]} - 1 ))
+  echo -n '+'
+  for i in $(seq 1 $end_idx); do
+    _print_chars "-" ${fields_len[$i]}
+    echo -n '+'
+  done
+
+  echo -e
+}
+
 # _get_metadata TABLE_NAME
 function _get_metadata()
 {
-  local lines="$(head -n 2 ${DB_DIR})"
+  local tb_file=$(_table_file "$1")
+  local lines="$(head -n 2 ${tb_file})"
   local loop_idx=0
 
   for record in ${lines}; do
     if [ ${loop_idx} -eq 0 ]; then
       unset fields
-      IFS='_' read -a fields <<< "${record}"
+      IFS=',' read -a fields <<< "${record}"
+      local idx=0
+      for field in ${fields[@]}; do
+        fields[$idx]=$( _b64d $field )
+        idx=$(( $idx + 1 ))
+      done
     elif [ ${loop_idx} -eq 1 ]; then
       unset fields_len
-      IFS='_' read -a fields_len <<< "${record}"
+      IFS=',' read -a fields_len <<< "${record}"
+    else
+      break
     fi
     loop_idx=$((${loop_idx} + 1))
   done

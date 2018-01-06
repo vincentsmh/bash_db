@@ -83,6 +83,22 @@ function test_insert_nonexist_table()
   assert_eq "Table (${tb_name}) doesn't exist" "${bash_db_error}"
 }
 
+function test_print_table()
+{
+  local tb_name="print_table"
+  rm -rf $(_table_file $tb_name)
+  create_table "${tb_name}" "field1" "field2" "field3"
+  for i in $(seq 1 10); do
+    local v=$(printf "%-${i}s" "$i")
+    v=$(echo ${v// /v}) # replace " " as "v"
+    insert_record "${tb_name}" "${v}" "${v}" "${v}"
+  done
+  echo -e
+
+  print_table "print_table"
+  rm -rf $(_table_file $tb_name)
+}
+
 function test_set_db_dir()
 {
   local db_dir="${HOME}/.cn/db"
