@@ -92,8 +92,8 @@ function print_table()
   read_all "$1" "print_data"
 
   local color=32
-  local i=0
-  local j=0
+  local i
+  local j
   local end_i=$(( ${num_of_rows} -1 ))
   for i in $(seq 0 $end_i); do
     echo -n "|"
@@ -187,7 +187,7 @@ function _print_table_head()
   _print_table_line
 
   # Print table fields
-  local i=0
+  local i
   echo -n "|"
   for i in ${!fields[@]}; do
     local field_max_len=${fields_len[$i]}
@@ -209,6 +209,7 @@ function _print_table_head()
 # get corresponding variables.
 function _print_table_line()
 {
+  local i
   echo -n '+'
   for i in ${!fields_len[@]}; do
     _print_chars "-" ${fields_len[$i]}
@@ -308,6 +309,7 @@ function _table_file()
 # call _save_metadata if you want to flush metadata to disk.
 function _update_metadata()
 {
+  local i
   if [ -z "$2" ]; then
     return 1
   fi
