@@ -16,10 +16,11 @@ function _b64e()
 }
 
 # create_table TABLE_NAME FIELD_NAME1 [FIELD_NAME2 FIELD_NAME3 ...]
-#   - Create a table in DB_DIR. Table and field name will be encoded as base64
-#     format. The first two lines are formated as follows:
-#       FIELD1,FIELD2,FIELD3_...
-#       NUMBER-OF-RECORDS,FIELD1-LENGTH,FIELD2-LENGTH,...
+#   - Create a table in DB_DIR. Table name will be encoded by base64 format.
+#
+#       This create two files in DB_DIR where one is used to store data and the
+#       others are used to store metadata (field names, number of rows and
+#       field length)
 function create_table()
 {
   mkdir -p ${DB_DIR}
@@ -30,24 +31,25 @@ function create_table()
     return 1
   fi
 
-  if ! touch ${tbfile}; then
+  if ! touch "$tbfile" ; then
     bash_db_error="Cannot create table file in ${DB_DIR}"
     return 1
   fi
 
   shift 1
   local fields_line=""
-  local field_len_line="0"
+  local fields_len_line=""
   for field in "$@"; do
     if [ "${fields_line}" != "" ]; then
-      fields_line="${fields_line},"
+      fields_line="${fields_line}\,"
+      fields_len_line="${fields_len_line}\,"
     fi
 
-    fields_line="${fields_line}$(_b64e ${field})"
-    field_len_line="${field_len_line},${#field}"
+    fields_line="${fields_line}${field}"
+    fields_len_line="${fields_len_line}${#field}"
   done
 
-  echo -e "${fields_line}\n${field_len_line}" > ${tbfile}
+  echo -e "${fields_line}\n${fields_len_line}\n0" > ${tbfile}.md
   return $?
 }
 
@@ -65,22 +67,20 @@ function insert_record()
     return 1
   fi
 
-  local rec_num=$(_get_record_num ${tbfile})
-  rec_num=$((${rec_num} + 1))
+  _get_metadata "$tbfile"
+  rec_num=$(( $num_of_rows + 1 ))
   local insert_line="${rec_num}"
-  local num_len_line="${rec_num}"
+  local num_len_line=""
   shift 1
   for field_value in $@; do
     num_len_line="${num_len_line} ${#field_value}"
-    insert_line="${insert_line},$(_b64e ${field_value})"
+    insert_line="${insert_line}\,${field_value}"
   done
 
   echo -e "${insert_line}" >> ${tbfile}
-  if [ $? -ne 0 ]; then
-    return $?
-  fi
-
-  _set_num_record ${tbfile} ${num_len_line}
+  _update_metadata "fl" "${num_len_line}"
+  _update_metadata "n" "1"
+  _save_metadata ${tbfile}
   return $?
 }
 
@@ -92,15 +92,16 @@ function print_table()
   read_all "$1" "print_data"
 
   local color=32
-  for i in $(seq 1 ${fields_len[0]}); do
-    local len_idx=1
+  local i=0
+  local j=0
+  local end_i=$(( ${num_of_rows} -1 ))
+  for i in $(seq 0 $end_i); do
     echo -n "|"
-    for field_name in ${fields[@]}; do
-      echo -en "\033[1;${color}m${print_data[$i,${field_name}]}\033[0m"
+    for j in ${!fields[@]}; do
+      echo -en "\033[1;${color}m${print_data[$i,${fields[$j]}]}\033[0m"
       _print_chars " " \
-        $(( ${fields_len[$len_idx]} - ${#print_data[$i,${field_name}]} ))
+        $(( ${fields_len[$j]} - ${#print_data[$i,${fields[$j]}]} ))
       echo -n "|"
-      len_idx=$(( $len_idx + 1 ))
     done
 
     if [ $color -eq 37 ]; then
@@ -116,10 +117,12 @@ function print_table()
 
 # read_all TABLE_NAME VARIABLE
 #   - Read all data to the given array. The read data will be stored as:
-#     VARIABLE[0][field_name_1]=value_1
-#     VARIABLE[0][field_name_2]=value_2
-#     VARIABLE[1][field_name_1]=value_3
-#     VARIABLE[1][field_name_2]=value_4
+#     VARIABLE[0]['ID']=record1_ID
+#     VARIABLE[0][field_name_1]=record1_value1
+#     VARIABLE[0][field_name_2]=record1_value2
+#     VARIABLE[1]['ID']=record2_ID
+#     VARIABLE[1][field_name_1]=record2_value3
+#     VARIABLE[1][field_name_2]=record2_value4
 #     ...
 function read_all()
 {
@@ -135,34 +138,23 @@ function read_all()
 
   eval unset $2
   eval declare -Ag $2
+  local tb_file=$(_table_file "$1")
   local loop_idx=0
   local record_idx=0
+  _get_metadata "$tb_file"
   while read record; do
-    if [ ${loop_idx} -eq 0 ]; then
-      unset fields
-      IFS=',' read -a fields <<< "${record}"
-      local idx=0
-      for field in $fields; do
-        fields[$idx]=$( _b64d $field )
-        idx=$(( $idx + 1 ))
-      done
-    elif [ ${loop_idx} -eq 1 ]; then
-      unset fields_len
-      IFS=',' read -a fields_len <<< "${record}"
-    else
-      unset array
-      IFS=',' read -a array <<< "${record}"
-      local th=$(echo ${array[0]})
-      local i=1
+    local i=1
+    unset array
+    _str_to_arr "array" "$record"
+    eval $2[${loop_idx},"ID"]="${array[0]}"
 
-      for field in ${fields[@]}; do
-        eval $2[${th},${field}]=$(_b64d ${array[$i]})
-        i=$(($i + 1))
-      done
-    fi
+    for field in ${fields[@]}; do
+      eval $2[${loop_idx},${field}]="${array[$i]}"
+      i=$(($i + 1))
+    done
 
     loop_idx=$((${loop_idx} + 1))
-  done < $(_table_file $1)
+  done < "$tb_file"
 }
 
 # set_db_dir PATH
@@ -183,12 +175,6 @@ function table_exist()
   fi
 }
 
-# _get_record_num TABLE_FILE
-function _get_record_num()
-{
-  cat $1 | sed -n 2p | awk -F "," {'print $1'}
-}
-
 # _print_chars CHAR NUMBER
 function _print_chars()
 {
@@ -197,14 +183,14 @@ function _print_chars()
 
 function _print_table_head()
 {
-  _get_metadata "$1"
+  _get_metadata "$(_table_file $1)"
   _print_table_line
 
   # Print table fields
-  local len_idx=1
+  local i=0
   echo -n "|"
-  for field in ${fields[@]}; do
-    local field_max_len=${fields_len[$len_idx]}
+  for i in ${!fields[@]}; do
+    local field_max_len=${fields_len[$i]}
     local field_len=${#field}
     local start_space_len=$(( ($field_max_len - $field_len) / 2 ))
     local tail_space_len=$(( $field_max_len - $field_len - $start_space_len ))
@@ -212,7 +198,6 @@ function _print_table_head()
     echo -n $field
     _print_chars " " $tail_space_len
     echo -n "|"
-    len_idx=$(( $len_idx + 1 ))
   done
 
   echo -e
@@ -224,9 +209,8 @@ function _print_table_head()
 # get corresponding variables.
 function _print_table_line()
 {
-  local end_idx=$(( ${#fields_len[@]} - 1 ))
   echo -n '+'
-  for i in $(seq 1 $end_idx); do
+  for i in ${!fields_len[@]}; do
     _print_chars "-" ${fields_len[$i]}
     echo -n '+'
   done
@@ -234,30 +218,49 @@ function _print_table_line()
   echo -e
 }
 
-# _get_metadata TABLE_NAME
+# _get_metadata TABLE_FILE
+#   The format of a table's metadata file is as: (separater is \,)
+#   FILED_NAME1\,FIELD_NAME2\,...
+#   FIELD1_LENGTH\,FIELD2_LENGTH\,...
+#   NUMBER_OF_ROWS_IN_TABLE
 function _get_metadata()
 {
-  local tb_file=$(_table_file "$1")
-  local lines="$(head -n 2 ${tb_file})"
+  local tb_md_file="${1}.md"
   local loop_idx=0
+  IFS=$'\n' read -rd '' -a lines <<< "$(cat $tb_md_file)"
 
-  for record in ${lines}; do
-    if [ ${loop_idx} -eq 0 ]; then
-      unset fields
-      IFS=',' read -a fields <<< "${record}"
-      local idx=0
-      for field in ${fields[@]}; do
-        fields[$idx]=$( _b64d $field )
-        idx=$(( $idx + 1 ))
-      done
-    elif [ ${loop_idx} -eq 1 ]; then
-      unset fields_len
-      IFS=',' read -a fields_len <<< "${record}"
-    else
-      break
+  unset fields
+  _str_to_arr "fields" "${lines[0]}"
+
+  unset fields_len
+  _str_to_arr "fields_len" "${lines[1]}"
+
+  num_of_rows="${lines[2]}"
+}
+
+# _save_metadata TABLE_NAME
+function _save_metadata()
+{
+  local tb_md_file="${1}.md"
+  local fields_line=""
+  local fields_len_line=""
+  for field in ${fields[@]}; do
+    if [ "${fields_line}" != "" ]; then
+      fields_line="${fields_line}\,"
     fi
-    loop_idx=$((${loop_idx} + 1))
+
+    fields_line="${fields_line}${field}"
   done
+
+  for field_len in ${fields_len[@]}; do
+    if [ "${fields_len_line}" != "" ]; then
+      fields_len_line="${fields_len_line}\,"
+    fi
+
+    fields_len_line="${fields_len_line}${field_len}"
+  done
+
+  echo -e "${fields_line}\n${fields_len_line}\n${num_of_rows}" > $tb_md_file
 }
 
 # _set_num_record TABLE_FILE UPDATED_NUMBER FIELD_LEN1 FIELD_LEN2 ...
@@ -284,9 +287,62 @@ function _set_num_record()
   return $?
 }
 
+# _str_to_arr ARRAY_NAME STRING
+function _str_to_arr()
+{
+  IFS='\,'
+  local cmd="$1=(${2})"
+  eval $cmd
+  unset IFS
+}
+
 # _table_file TABLE_NAME
 #   - Return table file path
 function _table_file()
 {
   echo "${DB_DIR}/$(_b64e $1)"
+}
+
+# _update_metadata "f"|"fl"|"n" FIELDS|FIELDS_LEN|NUM_OF_ROWS
+# This function only updates the corresponding value in variables. You should
+# call _save_metadata if you want to flush metadata to disk.
+function _update_metadata()
+{
+  if [ -z "$2" ]; then
+    return 1
+  fi
+
+  if [ "$1" == "n" ]; then
+    num_of_rows=$(( $num_of_rows + $2 ))
+  elif [ "$1" == "f" ]; then
+    unset tmp_arr
+    oIFS=$IFS
+    IFS=' ' read -a tmp_arr <<< "$2"
+    IFS=$oIFS
+    if [ ${#fields[@]} -eq ${#tmp_arr[@]} ]; then
+      for i in ${!fields[@]}; do
+        fields[$i]=${tmp_arr[$i]}
+      done
+    else
+      return 1
+    fi
+    unset tmp_arr
+  elif [ "$1" == "fl" ]; then
+    unset tmp_arr
+    oIFS=$IFS
+    IFS=' ' read -a tmp_arr <<< "$2"
+    IFS=$oIFS
+    if [ ${#fields_len[@]} -eq ${#tmp_arr[@]} ]; then
+      for i in ${!fields_len[@]}; do
+        if [ ${tmp_arr[$i]} -gt ${fields_len[$i]} ]; then
+          fields_len[$i]=${tmp_arr[$i]}
+        fi
+      done
+    else
+      return 1
+    fi
+    unset tmp_arr
+  fi
+
+  return 0
 }
