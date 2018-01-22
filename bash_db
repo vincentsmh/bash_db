@@ -41,8 +41,8 @@ function create_table()
   local fields_len_line=""
   for field in "$@"; do
     if [ "${fields_line}" != "" ]; then
-      fields_line="${fields_line}\,"
-      fields_len_line="${fields_len_line}\,"
+      fields_line="${fields_line}\t"
+      fields_len_line="${fields_len_line}\t"
     fi
 
     fields_line="${fields_line}${field}"
@@ -74,7 +74,7 @@ function insert_record()
   shift 1
   for field_value in "$@"; do
     num_len_line="${num_len_line} ${#field_value}"
-    insert_line="${insert_line}\,${field_value}"
+    insert_line="${insert_line}\t${field_value}"
   done
 
   echo -e "${insert_line}" >> ${tbfile}
@@ -98,7 +98,9 @@ function print_table()
   for i in $(seq 0 $end_i); do
     echo -n "|"
     for j in ${!fields[@]}; do
-      echo -en "\033[1;${color}m${print_data[$i,${fields[$j]}]}\033[0m"
+      echo -en "\033[1;${color}m"
+      echo -en "${print_data[$i,${fields[$j]}]}"
+      echo -en "\033[0m"
       _print_chars " " \
         $(( ${fields_len[$j]} - ${#print_data[$i,${fields[$j]}]} ))
       echo -n "|"
@@ -141,6 +143,7 @@ function read_all()
   local tb_file=$(_table_file "$1")
   local loop_idx=0
   local record_idx=0
+  local eval_str
   _get_metadata "$tb_file"
   while read record; do
     local i=1
@@ -149,8 +152,9 @@ function read_all()
     eval $2[${loop_idx},"ID"]="${array[0]}"
 
     for field in ${fields[@]}; do
-      eval $2[${loop_idx},${field}]="${array[$i]}"
-      i=$(($i + 1))
+      eval_str="$2[${loop_idx},\"${field}\"]=\"${array[$i]}\""
+      eval $eval_str
+      i=$(( $i + 1 ))
     done
 
     loop_idx=$((${loop_idx} + 1))
@@ -191,11 +195,11 @@ function _print_table_head()
   echo -n "|"
   for i in ${!fields[@]}; do
     local field_max_len=${fields_len[$i]}
-    local field_len=${#field}
+    local field_len=${#fields[$i]}
     local start_space_len=$(( ($field_max_len - $field_len) / 2 ))
     local tail_space_len=$(( $field_max_len - $field_len - $start_space_len ))
     _print_chars " " $start_space_len
-    echo -n $field
+    echo -n ${fields[$i]}
     _print_chars " " $tail_space_len
     echo -n "|"
   done
@@ -220,15 +224,17 @@ function _print_table_line()
 }
 
 # _get_metadata TABLE_FILE
-#   The format of a table's metadata file is as: (separater is \,)
-#   FILED_NAME1\,FIELD_NAME2\,...
-#   FIELD1_LENGTH\,FIELD2_LENGTH\,...
+#   The format of a table's metadata file is as: (separater is \t)
+#   FILED_NAME1\tFIELD_NAME2\t...
+#   FIELD1_LENGTH\tFIELD2_LENGTH\t...
 #   NUMBER_OF_ROWS_IN_TABLE
 function _get_metadata()
 {
   local tb_md_file="${1}.md"
   local loop_idx=0
+  oIFS=$IFS
   IFS=$'\n' read -rd '' -a lines <<< "$(cat $tb_md_file)"
+  IFS=$oIFS
 
   unset fields
   _str_to_arr "fields" "${lines[0]}"
@@ -247,7 +253,7 @@ function _save_metadata()
   local fields_len_line=""
   for field in ${fields[@]}; do
     if [ "${fields_line}" != "" ]; then
-      fields_line="${fields_line}\,"
+      fields_line="${fields_line}\t"
     fi
 
     fields_line="${fields_line}${field}"
@@ -255,7 +261,7 @@ function _save_metadata()
 
   for field_len in ${fields_len[@]}; do
     if [ "${fields_len_line}" != "" ]; then
-      fields_len_line="${fields_len_line}\,"
+      fields_len_line="${fields_len_line}\t"
     fi
 
     fields_len_line="${fields_len_line}${field_len}"
@@ -291,10 +297,13 @@ function _set_num_record()
 # _str_to_arr ARRAY_NAME STRING
 function _str_to_arr()
 {
-  IFS='\,'
-  local cmd="$1=(${2})"
-  eval $cmd
-  unset IFS
+  oIFS=$IFS
+  IFS=$'\t'
+  local _cmd_start="(\$( echo -e \""
+  local _cmd_tail="\"))"
+  local cmd="$1=${_cmd_start}${2}${_cmd_tail}"
+  eval "$cmd"
+  IFS=$oIFS
 }
 
 # _table_file TABLE_NAME
